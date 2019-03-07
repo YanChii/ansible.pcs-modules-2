@@ -97,6 +97,14 @@ EXAMPLES = '''
     options: >
       fake=some_value --master meta master-max=1 master-node-max=1 clone-max=2 clone-node-max=1 notify=true
       op monitor interval=60s meta resource-stickiness=100
+
+- name: create Master resource 'test-ha' from existing resource 'test'
+  pcs_resource:
+    name: 'test-ha'
+    resource_type: 'test'
+    resource_class: 'master'
+    options: >
+      master-max=1 master-node-max=1 clone-max=2 clone-node-max=1 notify=true
 '''
 
 # TODO if group exists and is not part of group, then specifying group won't put it into group
@@ -192,7 +200,7 @@ def run_module():
             argument_spec=dict(
                 state=dict(default="present", choices=['present', 'absent']),
                 name=dict(required=True),
-                resource_class=dict(default="ocf", choices=['ocf', 'systemd', 'stonith']),
+                resource_class=dict(default="ocf", choices=['ocf', 'systemd', 'stonith', 'master']),
                 resource_type=dict(required=False),
                 options=dict(default="", required=False),
                 force_resource_update=dict(default=False, type='bool', required=False),
@@ -244,6 +252,8 @@ def run_module():
             if not module.check_mode:
                 if resource_class == 'stonith':
                     cmd = 'pcs %(cib_file_param)s stonith create %(name)s %(resource_type)s %(options)s' % module.params
+                elif resource_class == 'master':
+                    cmd = 'pcs %(cib_file_param)s resource master %(name)s %(resource_type)s %(options)s' % module.params
                 else:
                     cmd = 'pcs %(cib_file_param)s resource create %(name)s %(resource_type)s %(options)s' % module.params
                 rc, out, err = module.run_command(cmd)
@@ -254,6 +264,15 @@ def run_module():
                     module.exit_json(changed=True)
                 else:
                     module.fail_json(msg="Failed to create resource using command '" + cmd + "'", output=out, error=err)
+
+        elif state == 'present' and resource is not None and resource_class == 'master':
+            # modify the master resource params directly
+            cmd = 'pcs resource meta %(name)s %(options)s' % module.params
+            rc, out, err = module.run_command(cmd)
+            if rc == 0:
+                module.exit_json(changed=True)
+            else:
+                module.fail_json(msg="Failed to modify resource using command '" + cmd + "'", output=out, error=err)
 
         elif state == 'present' and resource is not None:
             # resource should be present and we have find resource with such ID - lets compare it with definition if it needs a change
